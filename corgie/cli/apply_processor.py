@@ -1,5 +1,6 @@
 import click
 import procspec
+import json
 
 from corgie import scheduling, argparsers, helpers
 
@@ -140,6 +141,10 @@ class ApplyProcessorTask(scheduling.Task):
         type=str, required=True,
         help= "Specification for the destination layer. Must be a field type." )
 
+@corgie_option('--spec_path',  nargs=1,
+        type=str, required=False,
+        help= "JSON spec relating src stacks, src z to dst z")
+
 @corgie_option('--reference_key',        nargs=1, type=str, default='img')
 
 @corgie_optgroup('Apply Processor Method Specification')
@@ -161,7 +166,7 @@ class ApplyProcessorTask(scheduling.Task):
 
 
 @click.pass_context
-def apply_processor(ctx, src_layer_spec, dst_layer_spec,
+def apply_processor(ctx, src_layer_spec, dst_layer_spec, spec_path,
         processor_spec, pad, crop, chunk_xy, start_coord, processor_mip,
         end_coord, coord_mip, blend_xy, chunk_z, reference_key):
     scheduler = ctx.obj['scheduler']
@@ -183,19 +188,42 @@ def apply_processor(ctx, src_layer_spec, dst_layer_spec,
     if crop is None:
         crop = pad
 
-    apply_processor_job = ApplyProcessorJob(
-            src_stack=src_stack,
-            dst_layer=dst_layer,
-            chunk_xy=chunk_xy,
-            chunk_z=chunk_z,
-            blend_xy=blend_xy,
-            processor_spec=processor_spec,
-            pad=pad,
-            crop=crop,
-            bcube=bcube,
-            processor_mip=processor_mip)
+    
+    if spec_path:
+        with open(spec_path, 'r') as f:
+            spec = json.load(f)
 
-    # create scheduler and execute the job
-    scheduler.register_job(apply_processor_job,
-            job_name="Apply Processor {}".format(bcube))
+        for z in spec:
+            job_bcube = bcube.reset_coords(zs=z, ze=z+1, in_place=False)
+            apply_processor_job = ApplyProcessorJob(
+                    src_stack=src_stack,
+                    dst_layer=dst_layer,
+                    chunk_xy=chunk_xy,
+                    chunk_z=chunk_z,
+                    blend_xy=blend_xy,
+                    processor_spec=processor_spec,
+                    pad=pad,
+                    crop=crop,
+                    bcube=job_bcube,
+                    processor_mip=processor_mip)
+
+            # create scheduler and execute the job
+            scheduler.register_job(apply_processor_job,
+                    job_name="Apply Processor {}".format(job_bcube))
+    else:
+        apply_processor_job = ApplyProcessorJob(
+                src_stack=src_stack,
+                dst_layer=dst_layer,
+                chunk_xy=chunk_xy,
+                chunk_z=chunk_z,
+                blend_xy=blend_xy,
+                processor_spec=processor_spec,
+                pad=pad,
+                crop=crop,
+                bcube=bcube,
+                processor_mip=processor_mip)
+
+        # create scheduler and execute the job
+        scheduler.register_job(apply_processor_job,
+                job_name="Apply Processor {}".format(bcube))
     scheduler.execute_until_completion()
