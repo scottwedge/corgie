@@ -133,7 +133,8 @@ class Stack(StackBase):
 
         if translation_adjuster is not None:
             src_field_trans = translation_adjuster(agg_field)
-            translation += src_field_trans
+            translation.x += src_field_trans.x
+            translation.y += src_field_trans.y
 
         #if translation.x != 0 or translation.y != 0:
         #import pdb; pdb.set_trace()

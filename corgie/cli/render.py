@@ -82,8 +82,12 @@ class RenderTask(scheduling.Task):
                 self.src_stack.add_layer(f)
 
         src_translation, src_data_dict = self.src_stack.read_data_dict(padded_bcube,
-                mip=self.mip, add_prefix=False)
+                mip=self.mip, add_prefix=False, translation_adjuster=helpers.percentile_trans_adjuster)
+
         agg_field = src_data_dict[f"agg_field"]
+        agg_field[:, 0] -= src_translation.x
+        agg_field[:, 1] -= src_translation.y
+
         agg_mask = None
 
         if self.blackout_masks or self.seethrough:
@@ -171,8 +175,8 @@ class RenderTask(scheduling.Task):
 @corgie_option('--render_masks/--no_render_masks',          default=True)
 @corgie_option('--blackout_masks/--no_blackout_masks',      default=False)
 @corgie_option('--seethrough/--no_seethrough',              default=False)
-@corgie_option('--force_chunk_xy',     is_flag=True)
-@corgie_option('--force_chunk_z',      is_flag=True)
+@corgie_option('--force_chunk_xy',       nargs=1, type=int)
+@corgie_option('--force_chunk_z',        nargs=1, type=int)
 
 @corgie_optgroup('Data Region Specification')
 @corgie_option('--start_coord',      nargs=1, type=str, required=True)
@@ -196,15 +200,11 @@ def render(ctx, src_layer_spec, dst_folder, pad, render_masks, blackout_masks,
     src_stack = create_stack_from_spec(src_layer_spec,
             name='src', readonly=True)
 
-    if force_chunk_xy:
+    if not force_chunk_xy:
         force_chunk_xy = chunk_xy
-    else:
-        force_chunk_xy = None
 
-    if force_chunk_z:
+    if not force_chunk_z:
         force_chunk_z = chunk_z
-    else:
-        force_chunk_z = None
 
     dst_stack = stack.create_stack_from_reference(reference_stack=src_stack,
             folder=dst_folder, name="dst", types=["img", "mask"],
