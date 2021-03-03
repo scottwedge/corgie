@@ -91,8 +91,8 @@ class CopyTask(scheduling.Task):
 @corgie_option('--mip',                  nargs=1, type=int, required=True)
 @corgie_option('--blackout_masks/--no_blackout_masks',  default=False)
 @corgie_option('--copy_masks/--no_copy_masks',          default=True)
-@corgie_option('--force_chunk_xy',  is_flag=True)
-@corgie_option('--force_chunk_z',      is_flag=True)
+@corgie_option('--force_chunk_xy',       nargs=1, type=int)
+@corgie_option('--force_chunk_z',        nargs=1, type=int)
 
 @corgie_optgroup('Data Region Specification')
 @corgie_option('--start_coord',      nargs=1, type=str, required=True)
@@ -115,15 +115,12 @@ def copy(ctx, src_layer_spec, dst_folder, copy_masks, blackout_masks,
     src_stack = create_stack_from_spec(src_layer_spec,
             name='src', readonly=True)
 
-    if force_chunk_xy:
+    if not force_chunk_xy:
         force_chunk_xy = chunk_xy
-    else:
-        force_chunk_xy = None
 
-    if force_chunk_z:
+    if not force_chunk_z:
         force_chunk_z = chunk_z
-    else:
-        force_chunk_z = None
+
 
     dst_stack = stack.create_stack_from_reference(reference_stack=src_stack,
             folder=dst_folder, name="dst", types=["img", "mask"], readonly=False,

@@ -188,7 +188,7 @@ def apply_processor(ctx, src_layer_spec, dst_layer_spec, spec_path,
     if crop is None:
         crop = pad
 
-    
+
     if spec_path:
         with open(spec_path, 'r') as f:
             spec = json.load(f)
