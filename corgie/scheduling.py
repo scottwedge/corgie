@@ -9,7 +9,7 @@ parse_executor_from_kwargs = mazepa.parse_executor_from_kwargs
 
 class Job(mazepa.Job):
     def __init__(self, *kargs, **kwargs):
-        self.task_generator = self.task_generator()
+        super().__init__(*kargs, **kwargs)
 
     def task_generator():
         raise NotImplemented("Job classes must implement "

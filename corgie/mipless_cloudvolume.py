@@ -45,13 +45,15 @@ def deserialize_miplessCV(s, cache={}):
 class MiplessCloudVolume():
     """Multi-mip access to CloudVolumes using the same path
     """
-    def __init__(self, path, allow_info_writes=True, obj=CloudVolume,
+    def __init__(self, path, info=None, allow_info_writes=True, obj=CloudVolume,
             default_chunk=(512, 512, 1), overwrite=False, **kwargs):
         self.path = path
         self.allow_info_writes = allow_info_writes
         self.cv_params = {}
+        self.cv_params['info'] = info
         if 'cv_params' in kwargs:
             self.cv_params.update(kwargs['cv_params'])
+
         self.cv_params.setdefault('bounded', False)
         self.cv_params.setdefault('progress', False)
         self.cv_params.setdefault('autocrop', False)

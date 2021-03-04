@@ -231,6 +231,9 @@ class BoundingCube:
     def clone(self):
         return copy.deepcopy(self)
 
+    def copy(self):
+        return self.clone()
+
     def translate(self, z_offset=0, x_offset=0, y_offset=0, mip=0):
         x_range = self.x_range(mip=mip)
         y_range = self.y_range(mip=mip)

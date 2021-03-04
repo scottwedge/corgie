@@ -87,8 +87,9 @@ class RenderTask(scheduling.Task):
                 mip=self.mip, add_prefix=False, translation_adjuster=helpers.percentile_trans_adjuster)
 
         agg_field = src_data_dict[f"agg_field"]
-        agg_field[:, 0] -= src_translation.x
-        agg_field[:, 1] -= src_translation.y
+        if agg_field is not None:
+            agg_field[:, 0] -= src_translation.x
+            agg_field[:, 1] -= src_translation.y
 
         agg_mask = None
 

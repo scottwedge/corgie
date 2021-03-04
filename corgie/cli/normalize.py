@@ -143,16 +143,18 @@ def normalize(ctx, src_layer_spec, dst_folder, stats_mip,
     assert len(field_layers) == 0
 
     for l in img_layers:
+        import pdb; pdb.set_trace()
         mean_layer = l.get_sublayer(
-                    name=f"mean{suffix}",
-                    path=os.path.join(dst_folder, f"mean{suffix}"),
+                    name=f"mean_{l.name}{suffix}",
+                    path=os.path.join(dst_folder, f"mean_{l.name}{suffix}"),
                     layer_type="section_value",
                     )
 
         var_layer  = l.get_sublayer(
-                name=f"var{suffix}",
-                path=os.path.join(dst_folder, f"var{suffix}"),
-                layer_type="section_value")
+                name=f"var_{l.name}{suffix}",
+                path=os.path.join(dst_folder, f"var_{l.name}{suffix}"),
+                layer_type="section_value",
+                )
 
         if recompute_stats:
             compute_stats_job = ComputeStatsJob(

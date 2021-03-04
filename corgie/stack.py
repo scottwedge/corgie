@@ -21,9 +21,9 @@ class StackBase:
         if layer.name is None:
             raise exceptions.UnnamedLayerException(layer, f"Layer name "
                     f"needs to be set for it to be added to {self.name} stack.")
-        if layer.name in self.layers:
-            raise exceptions.ArgumentError(layer, f"Layer with name "
-                    f"'{layer.name}' added twice to '{self.name}' stack.")
+        #if layer.name in self.layers:
+        #    raise exceptions.ArgumentError(layer, f"Layer with name "
+        #            f"'{layer.name}' added twice to '{self.name}' stack.")
         if self.reference_layer is None:
             self.reference_layer = layer
         self.layers[layer.name] = layer

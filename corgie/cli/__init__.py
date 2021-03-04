@@ -14,6 +14,8 @@ from corgie.cli.normalize import normalize
 COMMAND_LIST.append(normalize)
 from corgie.cli.align_block import align_block
 COMMAND_LIST.append(align_block)
+from corgie.cli.align import align
+COMMAND_LIST.append(align)
 from corgie.cli.render import render
 COMMAND_LIST.append(render)
 from corgie.cli.copy import copy

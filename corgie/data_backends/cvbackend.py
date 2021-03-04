@@ -28,7 +28,6 @@ class CVLayerBase(BaseLayerBackend):
         self.path = path
         self.backend = backend
 
-        new_layer = False
         try:
             info = MiplessCloudVolume(path).get_info()
         except cv.exceptions.InfoUnavailableError as e:
@@ -36,9 +35,9 @@ class CVLayerBase(BaseLayerBackend):
                 raise e
             else:
                 info = copy.deepcopy(reference.get_info())
-                new_layer = True
+                overwrite = True
 
-        if new_layer or overwrite:
+        if overwrite:
             info['num_channels'] = self.get_num_channels()
             if self.dtype is None:
                 dtype = self.get_default_data_type()
@@ -159,49 +158,48 @@ class CVLayerBase(BaseLayerBackend):
                                    aligned_bbox.minpt[1], aligned_bbox.maxpt[1],
                                    aligned_bbox.minpt[2], aligned_bbox.maxpt[2],
                                    mip=mip)
-        if chunk_xy is not None:
 
-            if chunk_xy % cv_chunk[0] != 0:
-                raise exceptions.ChunkingError(self, f"Processing chunk_xy {chunk_xy} is not"
-                        f"divisible by MIP{mip} CV chunk {cv_chunk[0]}")
-            if chunk_z % cv_chunk[2] != 0:
-                raise exceptions.ChunkingError(self, f"Processing chunk_z {chunk_z} is not"
-                        f"divisible by MIP{mip} CV chunk {cv_chunk[2]}")
+        if chunk_xy % cv_chunk[0] != 0:
+            raise exceptions.ChunkingError(self, f"Processing chunk_xy {chunk_xy} is not"
+                    f"divisible by MIP{mip} CV chunk {cv_chunk[0]}")
+        if chunk_z % cv_chunk[2] != 0:
+            raise exceptions.ChunkingError(self, f"Processing chunk_z {chunk_z} is not"
+                    f"divisible by MIP{mip} CV chunk {cv_chunk[2]}")
 
-            if chunk_xy > aligned_bcube.x_size(mip):
-                x_adj = chunk_xy - aligned_bcube.x_size(mip)
+        if chunk_xy > aligned_bcube.x_size(mip):
+            x_adj = chunk_xy - aligned_bcube.x_size(mip)
+        else:
+            x_rem = aligned_bcube.x_size(mip) % chunk_xy
+            if x_rem == 0:
+                x_adj = 0
             else:
-                x_rem = aligned_bcube.x_size(mip) % chunk_xy
-                if x_rem == 0:
-                    x_adj = 0
-                else:
-                    x_adj = chunk_xy - x_rem
-            if chunk_xy > aligned_bcube.y_size(mip):
-                y_adj = chunk_xy - aligned_bcube.y_size(mip)
+                x_adj = chunk_xy - x_rem
+        if chunk_xy > aligned_bcube.y_size(mip):
+            y_adj = chunk_xy - aligned_bcube.y_size(mip)
+        else:
+            y_rem = aligned_bcube.y_size(mip) % chunk_xy
+            if y_rem == 0:
+                y_adj = 0
             else:
-                y_rem = aligned_bcube.y_size(mip) % chunk_xy
-                if y_rem == 0:
-                    y_adj = 0
-                else:
-                    y_adj = chunk_xy - y_rem
+                y_adj = chunk_xy - y_rem
 
-            if chunk_z > aligned_bcube.z_size():
-                z_adj = chunk_z - aligned_bcube.z_size()
+        if chunk_z > aligned_bcube.z_size():
+            z_adj = chunk_z - aligned_bcube.z_size()
+        else:
+            rem = aligned_bcube.z_size() % chunk_z
+            if rem == 0:
+                z_adj = 0
             else:
-                rem = aligned_bcube.z_size() % chunk_z
-                if rem == 0:
-                    z_adj = 0
-                else:
-                    z_adj = chunk_z - z_rem
-            if x_adj != 0:
-                xe = aligned_bcube.x_range(mip)[1]
-                aligned_bcube.reset_coords(xe=xe + x_adj, mip=mip)
-            if y_adj != 0:
-                ye = aligned_bcube.y_range(mip)[1]
-                aligned_bcube.reset_coords(ye=ye + y_adj, mip=mip)
-            if z_adj != 0:
-                ze = aligned_bcube.z_range()[1]
-                aligned_bcube.reset_coords(ze=ze + z_adj)
+                z_adj = chunk_z - z_rem
+        if x_adj != 0:
+            xe = aligned_bcube.x_range(mip)[1]
+            aligned_bcube.reset_coords(xe=xe + x_adj, mip=mip)
+        if y_adj != 0:
+            ye = aligned_bcube.y_range(mip)[1]
+            aligned_bcube.reset_coords(ye=ye + y_adj, mip=mip)
+        if z_adj != 0:
+            ze = aligned_bcube.z_range()[1]
+            aligned_bcube.reset_coords(ze=ze + z_adj)
         return aligned_bcube
 
     def break_bcube_into_chunks(self, bcube, chunk_xy, chunk_z, mip,
