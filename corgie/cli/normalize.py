@@ -35,9 +35,11 @@ class NormalizeJob(scheduling.Job):
                 bcube=self.bcube,
                 chunk_xy=self.chunk_xy,
                 chunk_z=self.chunk_z,
-                mip=self.mip)
+                mip=self.mip,
+                return_generator=True
+                )
 
-        tasks = [NormalizeTask(self.src_layer,
+        tasks = (NormalizeTask(self.src_layer,
                                 self.mask_layers,
                                 self.dst_layer,
                                 self.mean_layer,
@@ -45,8 +47,8 @@ class NormalizeJob(scheduling.Job):
                                 self.stats_mip,
                                 self.mip,
                                 self.mask_value,
-                                input_chunk) for input_chunk in chunks]
-        print (f"Yielding {len(tasks)} normalize tasks for bcube: {self.bcube}, MIP: {self.mip}")
+                                input_chunk) for input_chunk in chunks)
+        print (f"Yielding normalize tasks for bcube: {self.bcube}, MIP: {self.mip}")
 
         yield tasks
 

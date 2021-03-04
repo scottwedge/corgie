@@ -36,9 +36,11 @@ class RenderJob(scheduling.Job):
                     bcube=self.bcube,
                     chunk_xy=self.chunk_xy,
                     chunk_z=self.chunk_z,
-                    mip=mip)
+                    mip=mip,
+                    return_generator=True
+                    )
 
-            tasks = [RenderTask(self.src_stack,
+            tasks = (RenderTask(self.src_stack,
                                 self.dst_stack,
                                 blackout_masks=self.blackout_masks,
                                 render_masks=self.render_masks,
@@ -48,7 +50,7 @@ class RenderJob(scheduling.Job):
                                 additional_fields=self.additional_fields,
                                 seethrough=self.seethrough,
                                 seethrough_offset=self.seethrough_offset) \
-                                        for input_chunk in chunks]
+                                        for input_chunk in chunks)
             corgie_logger.info(f"Yielding render tasks for bcube: {self.bcube}, MIP: {mip}")
 
             yield tasks

@@ -33,13 +33,14 @@ class UpsampleJob(scheduling.Job):
                     bcube=self.bcube,
                     chunk_xy=self.chunk_xy,
                     chunk_z=self.chunk_z,
-                    mip=this_mip_start)
+                    mip=this_mip_start,
+                    return_generator=True)
 
-            tasks = [UpsampleTask(self.src_layer,
+            tasks = (UpsampleTask(self.src_layer,
                                     self.dst_layer,
                                     this_mip_start,
                                     this_mip_end,
-                                    input_chunk) for input_chunk in chunks]
+                                    input_chunk) for input_chunk in chunks)
             print ("Yielding upsample tasks for bcube: {}, MIPs: {}-{}".format(
                 self.bcube, this_mip_start, this_mip_end))
 

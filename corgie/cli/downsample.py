@@ -35,13 +35,14 @@ class DownsampleJob(scheduling.Job):
                     bcube=self.bcube,
                     chunk_xy=self.chunk_xy,
                     chunk_z=self.chunk_z,
-                    mip=this_mip_end)
+                    mip=this_mip_end,
+                    return_generator=True)
 
-            tasks = [DownsampleTask(self.src_layer,
+            tasks = (DownsampleTask(self.src_layer,
                                     self.dst_layer,
                                     this_mip_start,
                                     this_mip_end,
-                                    input_chunk) for input_chunk in chunks]
+                                    input_chunk) for input_chunk in chunks)
             print ("Yielding downsample tasks for bcube: {}, MIPs: {}-{}".format(
                 self.bcube, this_mip_start, this_mip_end))
 

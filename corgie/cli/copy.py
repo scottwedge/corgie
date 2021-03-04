@@ -29,14 +29,15 @@ class CopyJob(scheduling.Job):
                 bcube=self.bcube,
                 chunk_xy=self.chunk_xy,
                 chunk_z=self.chunk_z,
-                mip=self.mip)
+                mip=self.mip,
+                return_generator=True)
 
-        tasks = [CopyTask(self.src_stack,
+        tasks = (CopyTask(self.src_stack,
                             self.dst_stack,
                             blackout_masks=self.blackout_masks,
                             copy_masks=self.copy_masks,
                             mip=self.mip,
-                            bcube=input_chunk) for input_chunk in chunks]
+                            bcube=input_chunk) for input_chunk in chunks)
         corgie_logger.info(f"Yielding copy tasks for bcube: {self.bcube}, MIP: {self.mip}")
 
         yield tasks

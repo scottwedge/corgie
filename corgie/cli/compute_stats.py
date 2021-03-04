@@ -1,7 +1,9 @@
 import math
 import torch
+import copy
 
 import click
+import itertools
 from click_option_group import optgroup
 
 from corgie import scheduling
@@ -9,7 +11,7 @@ from corgie import helpers
 from corgie.log import logger as corgie_logger
 from corgie.layers import get_layer_types, DEFAULT_LAYER_TYPE, \
                              str_to_layer_type
-from corgie.boundingcube import get_bcube_from_coords
+from corgie.boundingcube import get_bcube_from_coords, BoundingCube
 from corgie import argparsers
 from corgie.argparsers import LAYER_HELP_STR, \
         create_layer_from_spec, corgie_optgroup, corgie_option
@@ -27,7 +29,7 @@ class ComputeStatsJob(scheduling.Job):
         self.chunk_xy = chunk_xy
         self.chunk_z = chunk_z
 
-        super().__init__(self)
+        super().__init__()
 
     def task_generator(self):
         chunks = self.src_layer.break_bcube_into_chunks(
@@ -53,12 +55,13 @@ class ComputeStatsJob(scheduling.Job):
                 bcube=self.bcube,
                 chunk_xy=self.chunk_xy,
                 chunk_z=self.chunk_z,
-                mip=self.mip)
+                mip=self.mip,
+                return_generator=True)
 
-        # sort chunks by z
-        chunks.sort(reverse=True, key=lambda c:c.z_range()[1])
+        # legacy: chunks come sorted by z by default
+        #chunks.sort(reverse=True, key=lambda c:c.z_range()[1])
 
-        tasks = [ComputeStatsTask(self.src_layer,
+        tasks = (ComputeStatsTask(self.src_layer,
                                 mean_layer=chunk_mean_layer,
                                 mask_layers=self.mask_layers,
                                 var_layer=chunk_var_layer,
@@ -67,37 +70,49 @@ class ComputeStatsJob(scheduling.Job):
                                 # chunks are sorted by z, so this gives the chunk num
                                 # for a given z
                                 write_channel=chunk_num % chunks_per_section) \
-                            for chunk_num in range(len(chunks))]
+                            for chunk_num in range(len(chunks)))
 
         corgie_logger.info("Yielding chunk stats tasks: {}, MIP: {}".format(
             self.bcube, self.mip))
         yield tasks
         yield scheduling.wait_until_done
 
-        accum_chunks = chunk_mean_layer.break_bcube_into_chunks(
-                bcube=self.bcube,
+        # the chunk mean values are written as different channels for 0, 0 pixel
+        accum_bcube = copy.deepcopy(self.bcube)
+        accum_bcube.reset_coords(xs=0, xe=1, ys=0, ye=1, mip=self.mip)
+
+        accum_mean_chunks = chunk_mean_layer.break_bcube_into_chunks(
+                bcube=accum_bcube,
                 chunk_xy=chunks_per_section,
                 chunk_z=self.chunk_z,
-                mip=self.mip)
+                mip=self.mip,
+                return_generator=True)
 
-        accum_mean_tasks = [ComputeStatsTask(chunk_mean_layer,
+        accum_var_chunks = chunk_mean_layer.break_bcube_into_chunks(
+                bcube=accum_bcube,
+                chunk_xy=chunks_per_section,
+                chunk_z=self.chunk_z,
+                mip=self.mip,
+                return_generator=True)
+
+        accum_mean_tasks = (ComputeStatsTask(chunk_mean_layer,
                                 mean_layer=self.mean_layer,
                                 var_layer=None,
                                 mip=self.mip,
                                 bcube=accum_chunk,
                                 write_channel=0) \
-                            for accum_chunk in accum_chunks]
+                            for accum_chunk in accum_mean_chunks)
+        corgie_logger.info("Yielding chunk stats aggregation tasks...")
+        yield accum_mean_tasks
 
-        accum_var_tasks = [ComputeStatsTask(chunk_var_layer,
+        accum_var_tasks = (ComputeStatsTask(chunk_var_layer,
                                 mean_layer=self.var_layer,
                                 var_layer=None,
                                 mip=self.mip,
                                 bcube=accum_chunk,
                                 write_channel=0) \
-                            for accum_chunk in accum_chunks]
-
-        corgie_logger.info("Yielding chunk stats aggregation tasks...")
-        yield accum_mean_tasks + accum_var_tasks
+                            for accum_chunk in accum_var_chunks)
+        yield accum_var_tasks
 
     def create_dst_layers(self):
         return mean_layer, var_layer
@@ -118,6 +133,7 @@ class ComputeStatsTask(scheduling.Task):
     def execute(self):
         src_data = self.src_layer.read(bcube=self.bcube,
                 mip=self.mip)
+
         mask_data = helpers.read_mask_list(
                 mask_list=self.mask_layers,
                 bcube=self.bcube, mip=self.mip)
@@ -127,14 +143,18 @@ class ComputeStatsTask(scheduling.Task):
         src_data = src_data[src_data != 0]
         src_data = src_data[src_data == src_data]
 
+        write_bcube = copy.deepcopy(self.bcube)
+        write_bcube.reset_coords(xs=0, xe=1, ys=0, ye=1)
+
         if self.mean_layer is not None:
             if len(src_data) == 0:
                 mean = torch.FloatTensor([0], device=src_data.device)
             else:
                 mean = src_data.float().mean()
+
             self.mean_layer.write(
                     mean,
-                    bcube=self.bcube,
+                    bcube=write_bcube,
                     mip=self.mip,
                     channel_start=self.write_channel,
                     channel_end=self.write_channel + 1)
@@ -147,7 +167,7 @@ class ComputeStatsTask(scheduling.Task):
 
             self.var_layer.write(
                     var,
-                    bcube=self.bcube,
+                    bcube=write_bcube,
                     mip=self.mip,
                     channel_start=self.write_channel,
                     channel_end=self.write_channel + 1)
