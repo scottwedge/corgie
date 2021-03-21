@@ -153,6 +153,7 @@ def align(ctx, src_layer_spec, tgt_layer_spec, dst_folder, render_pad, render_ch
             chunk_z=1
             )
 
+    corgie_logger.debug("Aligning blocks...")
     for i in range(len(blocks)):
         block = blocks[i]
 
@@ -176,6 +177,25 @@ def align(ctx, src_layer_spec, tgt_layer_spec, dst_folder, render_pad, render_ch
         scheduler.register_job(align_block_job_forv, job_name=f"Forward Align {block} {block_bcube}")
 
     scheduler.execute_until_completion()
+    corgie_logger.debug("Done!")
+
+    corgie_logger.debug("Stitching blocks...")
+    #TODO
+    #stitch_blocks_job = StitchBlockJob(
+    #    blocks=blocks,
+    #    src_stack=src_stack,
+    #    dst_stack=dst_stack,
+    #    bcube=bcube,
+    #    suffix=suffix,
+    #    render_method=render_method,
+    #    cf_method=cf_method
+    #)
+
+    #scheduler.register_job(stitch_blocks_job, job_name=f"Stitch blocks {bcube}")
+    #scheduler.execute_until_completion()
+
+    corgie_logger.debug("Done!")
+
     result_report = f"Aligned layers {[str(l) for l in src_stack.get_layers_of_type('img')]}. " \
             f"Results in {[str(l) for l in dst_stack.get_layers_of_type('img')]}"
     corgie_logger.info(result_report)

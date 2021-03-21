@@ -19,8 +19,8 @@ class ComputeFieldJob(scheduling.Job):
     def __init__(self, src_stack, tgt_stack, dst_layer,
             chunk_xy, chunk_z, processor_spec, processor_mip,
             pad, crop, bcube, tgt_z_offset,
+            processor_vv=[],
             clear_nontissue_field=True, blend_xy=0, suffix=''):
-
         self.src_stack = src_stack
         self.tgt_stack = tgt_stack
         self.dst_layer = dst_layer
@@ -32,26 +32,41 @@ class ComputeFieldJob(scheduling.Job):
         self.bcube = bcube
         self.tgt_z_offset = tgt_z_offset
         self.suffix = suffix #in case this job wants to make more layers
+        self.clear_nontissue_field = clear_nontissue_field
+
         self.processor_spec = processor_spec
         self.processor_mip = processor_mip
-        self.clear_nontissue_field = clear_nontissue_field
+        self.processor_vv = processor_vv
         if isinstance(self.processor_spec, str):
             self.processor_spec = [self.processor_spec]
         if isinstance(self.processor_mip, int):
             self.processor_mip = [self.processor_mip]
 
-        if len(self.processor_mip) != len(self.processor_spec):
+        if len(self.processor_vv) == 0:
+            self.processor_vv = [1 for _ in self.processor_spec]
+
+        if len(self.processor_mip) != len(self.processor_spec) or \
+                len(self.processor_mip) != len(self.processor_vv):
             raise exceptions.CorgieException("The number of processors doesn't "
-                    "match the number of specified processor MIPs")
+                    "match the number of specified processor MIPs or VV values")
 
         super().__init__()
 
     def task_generator(self):
+        intermediary_fields = []
         for i in range(len(self.processor_spec)):
-            if i == len(self.processor_spec) - 1:
+            this_proc = self.processor_spec[i]
+            this_proc_mip = self.processor_mip[i]
+            this_proc_vv = self.processor_vv[i]
+            is_last_proc = i == len(self.processor_spec) - 1
+
+            if is_last_proc:
+                # if it's the last processor, the dst_layer is final result
                 proc_field_layer = self.dst_layer
             else:
+                # if it's not the last processor, need to create intermediate layer
                 proc_field_layer_name = f'align_field_stage_{i}{self.suffix}'
+                intermediary_fields.append(proc_field_layer_name)
                 proc_field_layer = self.src_stack.create_sublayer(proc_field_layer_name,
                         layer_type='field', overwrite=True)
 
@@ -59,11 +74,10 @@ class ComputeFieldJob(scheduling.Job):
                 # disconnect it from the src_stack
                 self.src_stack.remove_layer(proc_field_layer_name)
 
-            this_proc = self.processor_spec[i]
-            this_proc_mip = self.processor_mip[i]
-            is_last_proc = i == len(self.processor_spec) - 1
+            # TODO: vector_vote
+            #if this_proc_vv == 1:
 
-            this_task = helpers.PartialSpecification(
+            cf_task = helpers.PartialSpecification(
                     ComputeFieldTask,
                     src_stack=self.src_stack,
                     tgt_stack=self.tgt_stack,
@@ -75,7 +89,7 @@ class ComputeFieldJob(scheduling.Job):
                     )
 
             chunked_job = ChunkedJob(
-                    task_class=this_task,
+                    task_class=cf_task,
                     dst_layer=proc_field_layer,
                     chunk_xy=self.chunk_xy,
                     chunk_z=self.chunk_z,
@@ -86,7 +100,6 @@ class ComputeFieldJob(scheduling.Job):
                     )
 
             yield from chunked_job.task_generator
-
 
             if not is_last_proc:
                 yield scheduling.wait_until_done
@@ -112,10 +125,10 @@ class ComputeFieldJob(scheduling.Job):
                     yield scheduling.wait_until_done
                     proc_field_layer.data_mip = next_proc_mip
 
-
         if self.processor_mip[0] > self.processor_mip[-1]:
             # good manners
             # prepare the ground for the next you
+            # downsample the fields all the way down so that the next coarse can start right away
             downsample_job = DownsampleJob(
                             src_layer=self.dst_layer,
                             chunk_xy=self.chunk_xy,
@@ -133,10 +146,8 @@ class ComputeFieldJob(scheduling.Job):
 
         # Now that the final field is ready,
         # remove intermediary fields from the source stack
-
-        for i in range(len(self.processor_spec) - 1):
-            proc_field_layer_name = f'align_field_stage_{i}{self.suffix}'
-            self.src_stack.remove_layer(proc_field_layer_name)
+        for intermediary_field in intermediary_fields:
+            self.src_stack.remove_layer(intermediary_field)
 
 
 class ComputeFieldTask(scheduling.Task):

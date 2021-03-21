@@ -11,13 +11,16 @@ from corgie.argparsers import LAYER_HELP_STR, \
         create_layer_from_spec, corgie_optgroup, corgie_option, \
         create_stack_from_spec
 
+from corgie.cli.downsample import DownsampleJob
+
 class RenderJob(scheduling.Job):
-    def __init__(self, src_stack, dst_stack, mips, pad, render_masks,
+    def __init__(self, src_stack, dst_stack, mip, downsample_to_mip, pad, render_masks,
                  blackout_masks, seethrough, bcube, chunk_xy, chunk_z,
                  additional_fields=[], seethrough_offset=-1):
         self.src_stack = src_stack
         self.dst_stack = dst_stack
-        self.mips = mips
+        self.mip = mip
+        self.downsample_to_mip = downsample_to_mip
         self.pad = pad
         self.bcube = bcube
         self.chunk_xy = chunk_xy
@@ -31,34 +34,45 @@ class RenderJob(scheduling.Job):
         super().__init__()
 
     def task_generator(self):
-        for mip in self.mips:
-            chunks = self.dst_stack.get_layers()[0].break_bcube_into_chunks(
+        chunks = self.dst_stack.get_layers()[0].break_bcube_into_chunks(
+                bcube=self.bcube,
+                chunk_xy=self.chunk_xy,
+                chunk_z=self.chunk_z,
+                mip=self.mip,
+                return_generator=True
+                )
+
+        tasks = (RenderTask(self.src_stack,
+                            self.dst_stack,
+                            blackout_masks=self.blackout_masks,
+                            render_masks=self.render_masks,
+                            mip=self.mip,
+                            pad=self.pad,
+                            bcube=input_chunk,
+                            additional_fields=self.additional_fields,
+                            seethrough=self.seethrough,
+                            seethrough_offset=self.seethrough_offset) \
+                                    for input_chunk in chunks)
+        corgie_logger.info(f"Yielding render tasks for bcube: {self.bcube}, MIP: {mip}")
+
+        yield tasks
+
+        if self.downsample_to_mip is not None:
+            yield scheduling.wait_until_done
+            downsample_job = DownsampleJob(
+                    src_layer=dst_layer,
+                    mip_start=self.render_mip,
+                    mip_end=self.downsample_to_mip,
                     bcube=self.bcube,
                     chunk_xy=self.chunk_xy,
-                    chunk_z=self.chunk_z,
-                    mip=mip,
-                    return_generator=True
+                    chunk_z=self.chunk_z
                     )
-
-            tasks = (RenderTask(self.src_stack,
-                                self.dst_stack,
-                                blackout_masks=self.blackout_masks,
-                                render_masks=self.render_masks,
-                                mip=mip,
-                                pad=self.pad,
-                                bcube=input_chunk,
-                                additional_fields=self.additional_fields,
-                                seethrough=self.seethrough,
-                                seethrough_offset=self.seethrough_offset) \
-                                        for input_chunk in chunks)
-            corgie_logger.info(f"Yielding render tasks for bcube: {self.bcube}, MIP: {mip}")
-
-            yield tasks
+            yield from downsample_job.task_generator
 
 
 class RenderTask(scheduling.Task):
     def __init__(self, src_stack, dst_stack, additional_fields, render_masks,
-            blackout_masks, seethrough, seethrough_offset, mip,
+            blackout_masks, seethrough, seethrough_offset, seethrough_misdec_proc, mip,
             pad, bcube):
         super().__init__(self)
         self.src_stack = src_stack
@@ -174,7 +188,8 @@ class RenderTask(scheduling.Task):
 @corgie_option('--chunk_xy',       '-c', nargs=1, type=int, default=1024)
 @corgie_option('--chunk_z',              nargs=1, type=int, default=1)
 @corgie_option('--pad',                  nargs=1, type=int, default=512)
-@corgie_option('--mip', 'mips', nargs=1, type=int, required=True, multiple=True)
+@corgie_option('--mip',                  nargs=1, type=int, required=True)
+@corgie_option('--downsample_to_mip',    nargs=1, type=int, default=None)
 @corgie_option('--render_masks/--no_render_masks',          default=True)
 @corgie_option('--blackout_masks/--no_blackout_masks',      default=False)
 @corgie_option('--seethrough/--no_seethrough',              default=False)
@@ -190,7 +205,7 @@ class RenderTask(scheduling.Task):
 
 @click.pass_context
 def render(ctx, src_layer_spec, dst_folder, pad, render_masks, blackout_masks,
-         seethrough, chunk_xy, chunk_z, start_coord, end_coord, mips,
+         seethrough, chunk_xy, chunk_z, start_coord, end_coord, mip,
          coord_mip, force_chunk_xy, force_chunk_z, suffix):
     scheduler = ctx.obj['scheduler']
 
@@ -218,7 +233,8 @@ def render(ctx, src_layer_spec, dst_folder, pad, render_masks, blackout_masks,
 
     render_job = RenderJob(src_stack=src_stack,
                            dst_stack=dst_stack,
-                           mips=mips,
+                           mip=mip,
+                           downsample_to_mip=downsample_to_mip,
                            pad=pad,
                            bcube=bcube,
                            chunk_xy=chunk_xy,

@@ -114,6 +114,7 @@ class AlignBlockJob(scheduling.Job):
 #@corgie_option('--seethrough_masks',    nargs=1, type=bool, default=False)
 #@corgie_option('--seethrough_misalign', nargs=1, type=bool, default=False)
 @corgie_option('--render_pad',          nargs=1, type=int,  default=512)
+@corgie_option('--render_rollback',     nargs=1, type=int,  default=0)
 @corgie_option('--render_chunk_xy',     nargs=1, type=int,  default=1024)
 
 @corgie_optgroup('Compute Field Method Specification')
@@ -167,7 +168,8 @@ def align_block(ctx, src_layer_spec, tgt_layer_spec, dst_folder, render_pad, ren
             chunk_xy=render_chunk_xy,
             chunk_z=1,
             render_masks=False,
-            mips=processor_mip
+            render_mip=min(processor_mip) - render_rollback,
+            downsample_to=max(processor_mip)
             )
 
     cf_method = helpers.PartialSpecification(
