@@ -12,8 +12,10 @@ from corgie.argparsers import LAYER_HELP_STR, \
 
 
 class UpsampleJob(scheduling.Job):
-    def __init__(self, src_layer, dst_layer, mip_start, mip_end,
-                 bcube, chunk_xy, chunk_z, mips_per_task):
+    def __init__(self, src_layer, mip_start, mip_end,
+                 bcube, chunk_xy, chunk_z, dst_layer=None, mips_per_task=3):
+        if dst_layer is None:
+            dset_layer = src_layer
         self.src_layer = src_layer
         self.dst_layer = dst_layer
         self.mip_start = mip_start

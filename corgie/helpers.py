@@ -21,6 +21,8 @@ class PartialSpecification:
     def __init__(self, f, **kwargs):
         self.f = f
         self.constr_kwargs = kwargs
+        for k, v in kwargs.items():
+            setattr(self, k, v)
 
     def __call__(self, **kwargs):
         return self.f(**self.constr_kwargs, **kwargs)

@@ -15,14 +15,21 @@ from corgie.argparsers import LAYER_HELP_STR, \
 from corgie.cli.render import RenderJob
 from corgie.cli.copy import CopyJob
 from corgie.cli.compute_field import ComputeFieldJob
+from corgie.cli.compare_sections import CompareSectionsJob
+
+from corgie.cli.downsample import DownsampleJob
+from corgie.cli.upsample import UpsampleJob
 
 class AlignBlockJob(scheduling.Job):
     def __init__(self, src_stack, tgt_stack, dst_stack, cf_method, render_method,
-                 bcube, copy_start=True, backward=False, suffix=None):
+                 bcube,
+                 seethrough_method=None,
+                 copy_start=True, backward=False, suffix=None):
         self.src_stack = src_stack
         self.tgt_stack = tgt_stack
         self.dst_stack = dst_stack
         self.bcube = bcube
+        self.seethrough_method = seethrough_method
 
         self.cf_method = cf_method
         self.render_method = render_method
@@ -34,7 +41,6 @@ class AlignBlockJob(scheduling.Job):
         super().__init__()
 
     def task_generator(self):
-
         if not self.backward:
             z_start = self.bcube.z_range()[0]
             z_end = self.bcube.z_range()[1]
@@ -52,8 +58,9 @@ class AlignBlockJob(scheduling.Job):
                     src_stack=self.src_stack,
                     dst_stack=self.dst_stack,
                     bcube=start_sec_bcube,
-                    seethrough=False,
-                    blackout_masks=True)
+                    blackout_masks=True,
+                    mips=self.cf_method.processor_mip,
+                    )
 
             yield from render_job.task_generator
             yield scheduling.wait_until_done
@@ -61,6 +68,12 @@ class AlignBlockJob(scheduling.Job):
 
         align_field_layer = self.dst_stack.create_sublayer(f'align_field{self.suffix}',
                 layer_type='field', overwrite=True)
+
+        if self.seethrough_method is not None:
+            seethrough_mask_layer = self.dst_stack.create_sublayer(f'seethrough_mask{self.suffix}',
+                    layer_type='mask', overwrite=True)
+        else:
+            seethrough_mask_layer = None
         #self.src_stack.add_layer(align_field_layer)
 
         for z in range(z_start + z_step, z_end + z_step, z_step):
@@ -77,14 +90,67 @@ class AlignBlockJob(scheduling.Job):
             yield from compute_field_job.task_generator
             yield scheduling.wait_until_done
 
+            if self.seethrough_method is not None:
+                # This sequence can be bundled into a "seethrough render" job
+
+                # First, render the images at the md mip level
+                # This could mean a reduntant render step, but that's fine
+                render_job = self.render_method(
+                    src_stack=self.src_stack,
+                    dst_stack=self.dst_stack,
+                    bcube=src_bcube,
+                    blackout_masks=False,
+                    preserve_zeros=True,
+                    additional_fields=[align_field_layer],
+                    mips=self.seethrough_method.mip
+                    )
+                yield from render_job.task_generator
+                yield scheduling.wait_until_done
+
+                # Now, we'll apply misalignment detection to produce a mask
+                # this mask will be used in the final render step
+                seethrough_mask_job = self.seethrough_method(
+                    src_stack=self.dst_stack, # we're looking for misalignments in the final stack
+                    bcube=src_bcube,
+                    tgt_z_offset=-z_step,
+                    suffix=self.suffix,
+                    dst_layer=seethrough_mask_layer)
+
+                yield from seethrough_mask_job.task_generator
+                yield scheduling.wait_until_done
+
+                # We'll downsample the mask to be available at all mip levels
+                downsample_job = DownsampleJob(
+                            src_layer=seethrough_mask_layer,
+                            chunk_xy=self.seethrough_method.chunk_xy,
+                            chunk_z=1,
+                            mip_start=self.seethrough_method.mip,
+                            mip_end=max(self.cf_method.processor_mip),
+                            bcube=self.bcube
+                        )
+                upsample_job = UpsampleJob(
+                            src_layer=seethrough_mask_layer,
+                            chunk_xy=self.seethrough_method.chunk_xy,
+                            chunk_z=1,
+                            mip_start=self.seethrough_method.mip,
+                            mip_end=min(self.cf_method.processor_mip),
+                            bcube=self.bcube
+                        )
+                if min(self.cf_method.processor_mip) < self.seethrough_method.mip or \
+                        max(self.cf_method.processor_mip) > self.seethrough_method.mip:
+                    yield from downsample_job.task_generator
+                    yield from upsample_job.task_generator
+                    yield scheduling.wait_until_done
+
             render_job = self.render_method(
                     src_stack=self.src_stack,
                     dst_stack=self.dst_stack,
                     bcube=src_bcube,
-                    seethrough=True,
                     blackout_masks=False,
+                    additional_fields=[align_field_layer],
+                    seethrough_mask_layer=seethrough_mask_layer,
+                    mips=self.cf_method.processor_mip,
                     seethrough_offset=seethrough_offset,
-                    additional_fields=[align_field_layer]
                     )
 
             yield from render_job.task_generator
@@ -111,8 +177,9 @@ class AlignBlockJob(scheduling.Job):
 @corgie_option('--suffix',              nargs=1, type=str,  default=None)
 
 @corgie_optgroup('Render Method Specification')
-#@corgie_option('--seethrough_masks',    nargs=1, type=bool, default=False)
-#@corgie_option('--seethrough_misalign', nargs=1, type=bool, default=False)
+@corgie_option('--seethrough_spec',        nargs=1, type=str, default=None)
+@corgie_option('--seethrough_spec_mip',    nargs=1, type=int, default=None)
+
 @corgie_option('--render_pad',          nargs=1, type=int,  default=512)
 @corgie_option('--render_rollback',     nargs=1, type=int,  default=0)
 @corgie_option('--render_chunk_xy',     nargs=1, type=int,  default=1024)
@@ -168,9 +235,22 @@ def align_block(ctx, src_layer_spec, tgt_layer_spec, dst_folder, render_pad, ren
             chunk_xy=render_chunk_xy,
             chunk_z=1,
             render_masks=False,
-            render_mip=min(processor_mip) - render_rollback,
-            downsample_to=max(processor_mip)
             )
+
+    if seethrough_spec is not None:
+        assert seethrough_spec_mip is not None
+
+        seethrough_method = helpers.PartialSpecification(
+                f=CompareSectionsJob,
+                mip=seethrough_spec_mip,
+                processor_spec=seethrough_spec,
+                chunk_xy=chunk_xy,
+                pad=pad,
+                crop=pad,
+            )
+    else:
+        seethrough_method = None
+
 
     cf_method = helpers.PartialSpecification(
             f=ComputeFieldJob,
@@ -196,6 +276,7 @@ def align_block(ctx, src_layer_spec, tgt_layer_spec, dst_folder, render_pad, ren
                                     bcube=bcube_back,
                                     render_method=render_method,
                                     cf_method=cf_method,
+                                    seethrough_method=seethrough_method,
                                     suffix=suffix,
                                     copy_start=copy_start,
                                     backward=True)
@@ -207,6 +288,7 @@ def align_block(ctx, src_layer_spec, tgt_layer_spec, dst_folder, render_pad, ren
                                     bcube=bcube_forv,
                                     render_method=render_method,
                                     cf_method=cf_method,
+                                    seethrough_method=seethrough_method,
                                     suffix=suffix,
                                     copy_start=True,
                                     backward=False)
@@ -218,6 +300,7 @@ def align_block(ctx, src_layer_spec, tgt_layer_spec, dst_folder, render_pad, ren
                                         bcube=bcube,
                                         render_method=render_method,
                                         cf_method=cf_method,
+                                        seethrough_method=seethrough_method,
                                         suffix=suffix,
                                         copy_start=copy_start,
                                         backward=mode=='backward')

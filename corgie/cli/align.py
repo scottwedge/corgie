@@ -18,6 +18,7 @@ from corgie.cli.align_block import AlignBlockJob
 from corgie.cli.render import RenderJob
 from corgie.cli.copy import CopyJob
 from corgie.cli.compute_field import ComputeFieldJob
+from corgie.cli.compare_sections import CompareSectionsJob
 
 @click.command()
 # Layers
@@ -56,6 +57,8 @@ from corgie.cli.compute_field import ComputeFieldJob
 @corgie_option('--crop',                nargs=1, type=int, default=None)
 @corgie_option('--copy_start/--no_copy_start',             default=True)
 
+@corgie_option('--seethrough_spec',      nargs=1, type=str, default=None)
+@corgie_option('--seethrough_spec_mip',  nargs=1, type=int, default=None)
 
 @corgie_optgroup('Data Region Specification')
 @corgie_option('--start_coord',        nargs=1, type=str, required=True)
@@ -71,7 +74,7 @@ from corgie.cli.compute_field import ComputeFieldJob
 def align(ctx, src_layer_spec, tgt_layer_spec, dst_folder, render_pad, render_chunk_xy,
         processor_spec, pad, crop, processor_mip, chunk_xy, start_coord, end_coord, coord_mip,
         bad_starter_path, block_size, block_overlap,
-        blend_xy, force_chunk_xy, suffix, copy_start):
+        blend_xy, force_chunk_xy, suffix, copy_start, seethrough_spec, seethrough_spec_mip):
 
     scheduler = ctx.obj['scheduler']
 
@@ -139,7 +142,6 @@ def align(ctx, src_layer_spec, tgt_layer_spec, dst_folder, render_pad, render_ch
             chunk_xy=render_chunk_xy,
             chunk_z=1,
             render_masks=False,
-            mips=processor_mip
             )
 
     cf_method = helpers.PartialSpecification(
@@ -152,6 +154,20 @@ def align(ctx, src_layer_spec, tgt_layer_spec, dst_folder, render_pad, render_ch
             blend_xy=blend_xy,
             chunk_z=1
             )
+    if seethrough_spec is not None:
+        assert seethrough_spec_mip is not None
+
+        seethrough_method = helpers.PartialSpecification(
+                f=CompareSectionsJob,
+                mip=seethrough_spec_mip,
+                processor_spec=seethrough_spec,
+                chunk_xy=chunk_xy,
+                pad=pad,
+                crop=pad,
+            )
+    else:
+        seethrough_method = None
+
 
     corgie_logger.debug("Aligning blocks...")
     for i in range(len(blocks)):
@@ -171,6 +187,7 @@ def align(ctx, src_layer_spec, tgt_layer_spec, dst_folder, render_pad, render_ch
                                     bcube=block_bcube,
                                     render_method=render_method,
                                     cf_method=cf_method,
+                                    seethrough_method=seethrough_method,
                                     suffix=suffix,
                                     copy_start=copy_start,
                                     backward=False)
